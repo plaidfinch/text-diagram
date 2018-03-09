@@ -3,9 +3,9 @@
              GeneralizedNewtypeDeriving, LambdaCase, BangPatterns,
              StandaloneDeriving, UndecidableInstances, GADTs, RankNTypes,
              FlexibleInstances, ViewPatterns, ScopedTypeVariables, DataKinds,
-             KindSignatures #-}
+             KindSignatures, NoMonomorphismRestriction #-}
 
-{-# OPTIONS_GHC -Wall #-}
+{-# OPTIONS_GHC -Wall -fno-warn-unticked-promoted-constructors #-}
 
 module Text.Graphics where
 -- module Main where
@@ -58,11 +58,14 @@ getSegment (Plus f) = f
 
 makePlus :: a -> a -> a -> a -> Plus a
 makePlus !u !l !r !d =
-  Plus $ \case
-    U -> u
-    L -> l
-    R -> r
-    D -> d
+  Plus $ cardinal u l r d
+
+cardinal :: a -> a -> a -> a -> Cardinal d -> a
+cardinal !u !l !r !d = \case
+  U -> u
+  L -> l
+  R -> r
+  D -> d
 
 newtype BoxChar
   = BoxChar Char
@@ -129,7 +132,7 @@ unionBCS (BCS small1 large1 space1) (BCS small2 large2 space2) =
 
 boxChar :: Char -> Maybe BoxChar
 boxChar c@(subtract 0x2500 . fromEnum -> i)
-  | c == ' ' = Just (unsafeBoxChar 128)
+  | c == ' ' = Just (BoxChar ' ')
   | i >= 0 && i < 128 =
     let bc = unsafeBoxChar i
     in if bc `memberBCS` allSymbols
@@ -161,7 +164,7 @@ listBCS (BCS small large space) =
 
 singleBCS :: BoxCharSet -> Maybe (Maybe BoxChar)
 singleBCS (BCS 0 0 False) = Just Nothing
-singleBCS (BCS 0 0 True)  = Just (Just (unsafeBoxChar 128))
+singleBCS (BCS 0 0 True)  = Just (Just (BoxChar ' '))
 singleBCS (BCS 0 l False)
   | popCount l == 1
   = Just (Just (unsafeBoxChar (64 + countTrailingZeros l)))
@@ -181,44 +184,42 @@ symbols =
     Line (Dashed Thick) -> dashedThick
     Line Double         -> double
   where
-    transparent, solidThin, solidThick, dashedThin, dashedThick, double
-      :: Cardinal d -> BoxCharSet
-    transparent =
-      \case
-        U -> unsafeMakeBCS " ╴╸╶╺╷╻─━╼╾┌┍┎┏┐┑┒┓┬┭┮┯┰┱┲┳╌╍═╒╓╔╕╖╗╤╥╦"
-        L -> unsafeMakeBCS " ╵╹╶╺╷╻│┃╽╿┌┍┎┏└┕┖┗├┝┞┟┠┡┢┣╎╏║╒╓╔╘╙╚╞╟╠"
-        R -> unsafeMakeBCS " ╵╹╴╸╷╻│┃╽╿┐┑┒┓┘┙┚┛┤┥┦┧┨┩┪┫╎╏║╕╖╗╛╜╝╡╢╣"
-        D -> unsafeMakeBCS " ╵╹╴╸╶╺─━╼╾└┕┖┗┘┙┚┛┴┵┶┷┸┹┺┻╌╍═╘╙╚╛╜╝╧╨╩"
-    solidThin =
-      \case
-        U -> unsafeMakeBCS "╵│╽└┕┘┙├┝┟┢┤┥┧┪┴┵┶┷┼┽┾┿╁╅╆╈╘╛╞╡╧╪"
-        L -> unsafeMakeBCS "╴─╼┐┒┘┚┤┦┧┨┬┮┰┲┴┶┸┺┼┾╀╁╂╄╆╊╖╜╢╥╨╫"
-        R -> unsafeMakeBCS "╶─╾┌┎└┖├┞┟┠┬┭┰┱┴┵┸┹┼┽╀╁╂╃╅╉╓╙╟╥╨╫"
-        D -> unsafeMakeBCS "╷│╿┌┍┐┑├┝┞┡┤┥┦┩┬┭┮┯┼┽┾┿╀╃╄╇╒╕╞╡╤╪"
-    solidThick =
-      \case
-        U -> unsafeMakeBCS "╹┃╿┖┗┚┛┞┠┡┣┦┨┩┫┸┹┺┻╀╂╃╄╇╉╊╋"
-        L -> unsafeMakeBCS "╸━╾┑┓┙┛┥┩┪┫┭┯┱┳┵┷┹┻┽┿╃╅╇╉╈╋"
-        R -> unsafeMakeBCS "╺━╼┍┏┕┗┝┡┢┣┮┯┲┳┶┷┺┻┾┿╄╆╇╈╊╋"
-        D -> unsafeMakeBCS "╻┃╽┎┏┒┓┟┠┢┣┧┨┪┫┰┱┲┳╁╂╅╆╈╉╊╋"
-    dashedThin =
-      \case
-        U -> unsafeMakeBCS "╎"
-        L -> unsafeMakeBCS "╌"
-        R -> unsafeMakeBCS "╌"
-        D -> unsafeMakeBCS "╎"
-    dashedThick =
-      \case
-        U -> unsafeMakeBCS "╏"
-        L -> unsafeMakeBCS "╍"
-        R -> unsafeMakeBCS "╍"
-        D -> unsafeMakeBCS "╏"
-    double=
-      \case
-        U -> unsafeMakeBCS "║╙╚╜╝╟╠╢╣╨╩╫╬"
-        L -> unsafeMakeBCS "═╕╗╛╝╡╣╤╦╧╩╪╬"
-        R -> unsafeMakeBCS "═╒╔╘╚╞╠╤╦╧╩╪╬"
-        D -> unsafeMakeBCS "║╓╔╖╗╟╠╢╣╥╦╫╬"
+    transparent = cardinal u l r d
+      where
+        u = unsafeMakeBCS " ╴╸╶╺╷╻─━╼╾┌┍┎┏┐┑┒┓┬┭┮┯┰┱┲┳╌╍═╒╓╔╕╖╗╤╥╦"
+        l = unsafeMakeBCS " ╵╹╶╺╷╻│┃╽╿┌┍┎┏└┕┖┗├┝┞┟┠┡┢┣╎╏║╒╓╔╘╙╚╞╟╠"
+        r = unsafeMakeBCS " ╵╹╴╸╷╻│┃╽╿┐┑┒┓┘┙┚┛┤┥┦┧┨┩┪┫╎╏║╕╖╗╛╜╝╡╢╣"
+        d = unsafeMakeBCS " ╵╹╴╸╶╺─━╼╾└┕┖┗┘┙┚┛┴┵┶┷┸┹┺┻╌╍═╘╙╚╛╜╝╧╨╩"
+    solidThin = cardinal u l r d
+      where
+        u = unsafeMakeBCS "╵│╽└┕┘┙├┝┟┢┤┥┧┪┴┵┶┷┼┽┾┿╁╅╆╈╘╛╞╡╧╪"
+        l = unsafeMakeBCS "╴─╼┐┒┘┚┤┦┧┨┬┮┰┲┴┶┸┺┼┾╀╁╂╄╆╊╖╜╢╥╨╫"
+        r = unsafeMakeBCS "╶─╾┌┎└┖├┞┟┠┬┭┰┱┴┵┸┹┼┽╀╁╂╃╅╉╓╙╟╥╨╫"
+        d = unsafeMakeBCS "╷│╿┌┍┐┑├┝┞┡┤┥┦┩┬┭┮┯┼┽┾┿╀╃╄╇╒╕╞╡╤╪"
+    solidThick = cardinal u l r d
+      where
+        u = unsafeMakeBCS "╹┃╿┖┗┚┛┞┠┡┣┦┨┩┫┸┹┺┻╀╂╃╄╇╉╊╋"
+        l = unsafeMakeBCS "╸━╾┑┓┙┛┥┩┪┫┭┯┱┳┵┷┹┻┽┿╃╅╇╉╈╋"
+        r = unsafeMakeBCS "╺━╼┍┏┕┗┝┡┢┣┮┯┲┳┶┷┺┻┾┿╄╆╇╈╊╋"
+        d = unsafeMakeBCS "╻┃╽┎┏┒┓┟┠┢┣┧┨┪┫┰┱┲┳╁╂╅╆╈╉╊╋"
+    dashedThin = cardinal u l r d
+      where
+        u = unsafeMakeBCS "╎"
+        l = unsafeMakeBCS "╌"
+        r = unsafeMakeBCS "╌"
+        d = unsafeMakeBCS "╎"
+    dashedThick = cardinal u l r d
+      where
+        u = unsafeMakeBCS "╏"
+        l = unsafeMakeBCS "╍"
+        r = unsafeMakeBCS "╍"
+        d = unsafeMakeBCS "╏"
+    double = cardinal u l r d
+      where
+        u = unsafeMakeBCS "║╙╚╜╝╟╠╢╣╨╩╫╬"
+        l = unsafeMakeBCS "═╕╗╛╝╡╣╤╦╧╩╪╬"
+        r = unsafeMakeBCS "═╒╔╘╚╞╠╤╦╧╩╪╬"
+        d = unsafeMakeBCS "║╓╔╖╗╟╠╢╣╥╦╫╬"
 
 symbolSet :: Cardinal d -> Style LineStyle -> BoxCharSet
 symbolSet = getSegment symbols
