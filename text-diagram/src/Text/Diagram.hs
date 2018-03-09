@@ -8,6 +8,7 @@
 {-# OPTIONS_GHC -Wall #-}
 
 module Text.Graphics where
+-- module Main where
 
 import Data.Semigroup
 import Control.Applicative
@@ -20,6 +21,9 @@ import Data.List
 import Data.Foldable
 import Data.Traversable
 
+
+-- main :: IO ()
+-- main = putStrLn $ mapMaybe (fmap getBoxChar . symbol) universe
 
 data Thickness
   = Thin
@@ -168,45 +172,53 @@ singleBCS _ = Nothing
 
 symbols :: Plus (Style LineStyle -> BoxCharSet)
 symbols =
-  Plus $ flip $ fmap unsafeMakeBCS . \case
-    Transparent ->
-      map getBoxChar  . listBCS . flip (getSegment symbols) White
-    White ->
+  Plus $ flip $ \case
+    Transparent         -> transparent
+    White               -> transparent
+    Line (Solid Thin)   -> solidThin
+    Line (Solid Thick)  -> solidThick
+    Line (Dashed Thin)  -> dashedThin
+    Line (Dashed Thick) -> dashedThick
+    Line Double         -> double
+  where
+    transparent, solidThin, solidThick, dashedThin, dashedThick, double
+      :: Cardinal d -> BoxCharSet
+    transparent =
       \case
-        U -> " ╴╸╶╺╷╻─━╼╾┌┍┎┏┐┑┒┓┬┭┮┯┰┱┲┳╌╍═╒╓╔╕╖╗╤╥╦"
-        L -> " ╵╹╶╺╷╻│┃╽╿┌┍┎┏└┕┖┗├┝┞┟┠┡┢┣╎╏║╒╓╔╘╙╚╞╟╠"
-        R -> " ╵╹╴╸╷╻│┃╽╿┐┑┒┓┘┙┚┛┤┥┦┧┨┩┪┫╎╏║╕╖╗╛╜╝╡╢╣"
-        D -> " ╵╹╴╸╶╺─━╼╾└┕┖┗┘┙┚┛┴┵┶┷┸┹┺┻╌╍═╘╙╚╛╜╝╧╨╩"
-    Line (Solid Thin) ->
+        U -> unsafeMakeBCS " ╴╸╶╺╷╻─━╼╾┌┍┎┏┐┑┒┓┬┭┮┯┰┱┲┳╌╍═╒╓╔╕╖╗╤╥╦"
+        L -> unsafeMakeBCS " ╵╹╶╺╷╻│┃╽╿┌┍┎┏└┕┖┗├┝┞┟┠┡┢┣╎╏║╒╓╔╘╙╚╞╟╠"
+        R -> unsafeMakeBCS " ╵╹╴╸╷╻│┃╽╿┐┑┒┓┘┙┚┛┤┥┦┧┨┩┪┫╎╏║╕╖╗╛╜╝╡╢╣"
+        D -> unsafeMakeBCS " ╵╹╴╸╶╺─━╼╾└┕┖┗┘┙┚┛┴┵┶┷┸┹┺┻╌╍═╘╙╚╛╜╝╧╨╩"
+    solidThin =
       \case
-        U -> "╵│╽└┕┘┙├┝┟┢┤┥┧┪┴┵┶┷┼┽┾┿╁╅╆╈╘╛╞╡╧╪"
-        L -> "╴─╼┐┒┘┚┤┦┧┨┬┮┰┲┴┶┸┺┼┾╀╁╂╄╆╊╖╜╢╥╨╫"
-        R -> "╶─╾┌┎└┖├┞┟┠┬┭┰┱┴┵┸┹┼┽╀╁╂╃╅╉╓╙╟╥╨╫"
-        D -> "╷│╿┌┍┐┑├┝┞┡┤┥┦┩┬┭┮┯┼┽┾┿╀╃╄╇╒╕╞╡╤╪"
-    Line (Solid Thick) ->
+        U -> unsafeMakeBCS "╵│╽└┕┘┙├┝┟┢┤┥┧┪┴┵┶┷┼┽┾┿╁╅╆╈╘╛╞╡╧╪"
+        L -> unsafeMakeBCS "╴─╼┐┒┘┚┤┦┧┨┬┮┰┲┴┶┸┺┼┾╀╁╂╄╆╊╖╜╢╥╨╫"
+        R -> unsafeMakeBCS "╶─╾┌┎└┖├┞┟┠┬┭┰┱┴┵┸┹┼┽╀╁╂╃╅╉╓╙╟╥╨╫"
+        D -> unsafeMakeBCS "╷│╿┌┍┐┑├┝┞┡┤┥┦┩┬┭┮┯┼┽┾┿╀╃╄╇╒╕╞╡╤╪"
+    solidThick =
       \case
-        U -> "╹┃╿┖┗┚┛┞┠┡┣┦┨┩┫┸┹┺┻╀╂╃╄╇╉╊╋"
-        L -> "╸━╾┑┓┙┛┥┩┪┫┭┯┱┳┵┷┹┻┽┿╃╅╇╉╈╋"
-        R -> "╺━╼┍┏┕┗┝┡┢┣┮┯┲┳┶┷┺┻┾┿╄╆╇╈╊╋"
-        D -> "╻┃╽┎┏┒┓┟┠┢┣┧┨┪┫┰┱┲┳╁╂╅╆╈╉╊╋"
-    Line (Dashed Thin) ->
+        U -> unsafeMakeBCS "╹┃╿┖┗┚┛┞┠┡┣┦┨┩┫┸┹┺┻╀╂╃╄╇╉╊╋"
+        L -> unsafeMakeBCS "╸━╾┑┓┙┛┥┩┪┫┭┯┱┳┵┷┹┻┽┿╃╅╇╉╈╋"
+        R -> unsafeMakeBCS "╺━╼┍┏┕┗┝┡┢┣┮┯┲┳┶┷┺┻┾┿╄╆╇╈╊╋"
+        D -> unsafeMakeBCS "╻┃╽┎┏┒┓┟┠┢┣┧┨┪┫┰┱┲┳╁╂╅╆╈╉╊╋"
+    dashedThin =
       \case
-        U -> "╎"
-        L -> "╌"
-        R -> "╌"
-        D -> "╎"
-    Line (Dashed Thick) ->
+        U -> unsafeMakeBCS "╎"
+        L -> unsafeMakeBCS "╌"
+        R -> unsafeMakeBCS "╌"
+        D -> unsafeMakeBCS "╎"
+    dashedThick =
       \case
-        U -> "╏"
-        L -> "╍"
-        R -> "╍"
-        D -> "╏"
-    Line Double ->
+        U -> unsafeMakeBCS "╏"
+        L -> unsafeMakeBCS "╍"
+        R -> unsafeMakeBCS "╍"
+        D -> unsafeMakeBCS "╏"
+    double=
       \case
-        U -> "║╙╚╜╝╟╠╢╣╨╩╫╬"
-        L -> "═╕╗╛╝╡╣╤╦╧╩╪╬"
-        R -> "═╒╔╘╚╞╠╤╦╧╩╪╬"
-        D -> "║╓╔╖╗╟╠╢╣╥╦╫╬"
+        U -> unsafeMakeBCS "║╙╚╜╝╟╠╢╣╨╩╫╬"
+        L -> unsafeMakeBCS "═╕╗╛╝╡╣╤╦╧╩╪╬"
+        R -> unsafeMakeBCS "═╒╔╘╚╞╠╤╦╧╩╪╬"
+        D -> unsafeMakeBCS "║╓╔╖╗╟╠╢╣╥╦╫╬"
 
 symbolSet :: Cardinal d -> Style LineStyle -> BoxCharSet
 symbolSet = getSegment symbols
@@ -310,6 +322,10 @@ instance Finite BoxChar
 
 instance Semigroup BoxChar where
   c <> d = approxSymbol (parseSymbol c <> parseSymbol d)
+
+instance Monoid BoxChar where
+  mempty = BoxChar ' '
+  mappend = (<>)
 
 instance Universe Thickness where
   universe = [Thin, Thick]
