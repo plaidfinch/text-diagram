@@ -311,7 +311,7 @@ approxSymbol plus =
 
 parseSymbol :: Symbol -> Plus'
 parseSymbol c =
-  fromMaybe (error "parseSymbol: symbol not found (should be impossible)") $
+  fromMaybe (error $ "parseSymbol: symbol not found (should be impossible)" ++ show c) $
     for symbols $ \f ->
       find (memberSS c . f) universe
 
