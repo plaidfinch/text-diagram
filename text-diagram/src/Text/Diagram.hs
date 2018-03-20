@@ -23,7 +23,9 @@ import Data.Traversable
 
 
 -- main :: IO ()
--- main = putStrLn $ mapMaybe (fmap getBoxChar . symbol) universe
+-- main = putStrLn $ mapMaybe (fmap getSymbol . symbol) universe
+
+-- Line styles
 
 data Thickness
   = Thin
@@ -42,6 +44,10 @@ data Style l
   | White
   deriving (Show, Eq, Ord)
 
+type Style' = Style LineStyle
+
+-- Cardinal directions
+
 data Axis = Vertical | Horizontal
 
 data Cardinal (a :: Axis) where
@@ -50,130 +56,148 @@ data Cardinal (a :: Axis) where
   R :: Cardinal Horizontal
   D :: Cardinal Vertical
 
+cardinal :: a -> a -> a -> a -> Cardinal d -> a
+cardinal !u !l !r !d =
+  \case
+    U -> u
+    L -> l
+    R -> r
+    D -> d
+
+onCardinals :: (forall d. Cardinal d -> a) -> [a]
+onCardinals f = [f U, f L, f R, f D]
+
+-- Semantic representation of box-drawing cells
+-- Behaves like a strict quadruple, accessed via Cardinals
+
 newtype Plus a
   = Plus (forall d. Cardinal d -> a)
 
-getSegment :: Plus a -> Cardinal d -> a
-getSegment (Plus f) = f
+type Plus' = Plus Style'
+
+(@@) :: Plus a -> Cardinal d -> a
+(@@) (Plus f) = f
 
 makePlus :: a -> a -> a -> a -> Plus a
 makePlus !u !l !r !d =
   Plus $ cardinal u l r d
 
-cardinal :: a -> a -> a -> a -> Cardinal d -> a
-cardinal !u !l !r !d = \case
-  U -> u
-  L -> l
-  R -> r
-  D -> d
+-- Box drawing characters, restricted to those represented by our framework
+-- We don't use the entire Unicode block, and you can't construct unused ones
 
-newtype BoxChar
-  = BoxChar Char
+newtype Symbol
+  = Symbol Char
   deriving (Eq, Ord)
 
-getBoxChar :: BoxChar -> Char
-getBoxChar (BoxChar c) = c
+getSymbol :: Symbol -> Char
+getSymbol (Symbol c) = c
 
-instance Show BoxChar where
-  showsPrec n (BoxChar c) =
-    showParen (n > 10) . showString $ "BoxChar '" ++ [c] ++ "'"
+instance Show Symbol where
+  showsPrec n (Symbol c) =
+    showParen (n > 10) . showString $ "Symbol '" ++ [c] ++ "'"
 
-boxCharNum :: BoxChar -> Int
-boxCharNum (BoxChar c)
+boxCharNum :: Symbol -> Int
+boxCharNum (Symbol c)
   | c == ' '  = 128
   | otherwise = fromEnum c - 0x2500
 
-unsafeBoxChar :: Int -> BoxChar
-unsafeBoxChar i
-  | i == 128 = BoxChar ' '
-  | i >= 0 && i < 128 = BoxChar (toEnum (i + 0x2500))
-  | otherwise = error "unsafeBoxChar: out of range"
+unsafeSymbol :: Int -> Symbol
+unsafeSymbol i
+  | i == 128 = Symbol ' '
+  | i >= 0 && i < 128 = Symbol (toEnum (i + 0x2500))
+  | otherwise = error "unsafeSymbol: out of range"
 
-data BoxCharSet
-  = BCS !Word !Word !Bool
+-- Sets of Symbols, efficiently packed as bit-vectors
+-- There are potentially 129 (yes, I know) characters:
+-- 128 from the unicode block + the space character ' '
 
-instance Show BoxCharSet where
+data SymbolSet
+  = SS !Word !Word !Bool
+
+instance Show SymbolSet where
   showsPrec n bcs =
     showParen (n > 10) . showString $
-      "fromString \"" ++ map getBoxChar (listBCS bcs) ++ "\""
+      "fromString \"" ++ map getSymbol (listSS bcs) ++ "\""
 
-emptyBCS :: BoxCharSet
-emptyBCS = BCS 0 0 False
+emptySS :: SymbolSet
+emptySS = SS 0 0 False
 
-insertBCS :: BoxChar -> BoxCharSet -> BoxCharSet
-insertBCS (boxCharNum -> c) (BCS small large space)
-  | c < 64    = BCS (setBit small c) large space
-  | c < 128   = BCS small (setBit large (c - 64)) space
-  | otherwise = BCS small large True
+insertSS :: Symbol -> SymbolSet -> SymbolSet
+insertSS (boxCharNum -> c) (SS small large space)
+  | c < 64    = SS (setBit small c) large space
+  | c < 128   = SS small (setBit large (c - 64)) space
+  | otherwise = SS small large True
 
-singletonBCS :: BoxChar -> BoxCharSet
-singletonBCS c = insertBCS c emptyBCS
+singletonSS :: Symbol -> SymbolSet
+singletonSS c = insertSS c emptySS
 
-instance Semigroup BoxCharSet where
-  (<>) = intersectBCS
+instance Semigroup SymbolSet where
+  (<>) = intersectSS
 
-instance Monoid BoxCharSet where
-  mempty  = BCS maxBound maxBound True
+instance Monoid SymbolSet where
+  mempty  = allSymbols
   mappend = (<>)
 
-memberBCS :: BoxChar -> BoxCharSet -> Bool
-memberBCS (boxCharNum -> c) (BCS small large space)
+memberSS :: Symbol -> SymbolSet -> Bool
+memberSS (boxCharNum -> c) (SS small large space)
   | c < 64    = testBit small c
   | c < 128   = testBit large (c - 64)
   | otherwise = space
 
-intersectBCS :: BoxCharSet -> BoxCharSet -> BoxCharSet
-intersectBCS (BCS small1 large1 space1) (BCS small2 large2 space2) =
-  BCS (small1 .&. small2) (large1 .&. large2) (space1 && space2)
+intersectSS :: SymbolSet -> SymbolSet -> SymbolSet
+intersectSS (SS small1 large1 space1) (SS small2 large2 space2) =
+  SS (small1 .&. small2) (large1 .&. large2) (space1 && space2)
 
-unionBCS :: BoxCharSet -> BoxCharSet -> BoxCharSet
-unionBCS (BCS small1 large1 space1) (BCS small2 large2 space2) =
-  BCS (small1 .|. small2) (large1 .|. large2) (space1 || space2)
+unionSS :: SymbolSet -> SymbolSet -> SymbolSet
+unionSS (SS small1 large1 space1) (SS small2 large2 space2) =
+  SS (small1 .|. small2) (large1 .|. large2) (space1 || space2)
 
-boxChar :: Char -> Maybe BoxChar
+boxChar :: Char -> Maybe Symbol
 boxChar c@(subtract 0x2500 . fromEnum -> i)
-  | c == ' ' = Just (BoxChar ' ')
+  | c == ' ' = Just (Symbol ' ')
   | i >= 0 && i < 128 =
-    let bc = unsafeBoxChar i
-    in if bc `memberBCS` allSymbols
+    let bc = unsafeSymbol i
+    in if bc `memberSS` allSymbols
        then Just bc
        else Nothing
   | otherwise = Nothing
 
-makeBCS :: String -> BoxCharSet
-makeBCS = foldr insertBCS emptyBCS . mapMaybe boxChar
+makeSS :: String -> SymbolSet
+makeSS = foldr insertSS emptySS . mapMaybe boxChar
 
-unsafeMakeBCS :: String -> BoxCharSet
-unsafeMakeBCS =
-  foldr insertBCS emptyBCS
-  . map BoxChar
+unsafeMakeSS :: String -> SymbolSet
+unsafeMakeSS =
+  foldr insertSS emptySS
+  . map Symbol
   . filter (\c@(subtract 0x2500 . fromEnum -> i) ->
               c == ' ' || (0 <= i && i < 128))
 
-instance IsString BoxCharSet where
-  fromString = makeBCS
+instance IsString SymbolSet where
+  fromString = makeSS
 
-listBCS :: BoxCharSet -> [BoxChar]
-listBCS (BCS small large space) =
-  map unsafeBoxChar $
+listSS :: SymbolSet -> [Symbol]
+listSS (SS small large space) =
+  map unsafeSymbol $
     trueBits small
     ++ map (+ 64) (trueBits large)
     ++ if space then [128] else []
   where
     trueBits b = filter (testBit b) [0..63]
 
-singleBCS :: BoxCharSet -> Maybe (Maybe BoxChar)
-singleBCS (BCS 0 0 False) = Just Nothing
-singleBCS (BCS 0 0 True)  = Just (Just (BoxChar ' '))
-singleBCS (BCS 0 l False)
+singleSS :: SymbolSet -> Maybe (Maybe Symbol)
+singleSS (SS 0 0 False) = Just Nothing
+singleSS (SS 0 0 True)  = Just (Just (Symbol ' '))
+singleSS (SS 0 l False)
   | popCount l == 1
-  = Just (Just (unsafeBoxChar (64 + countTrailingZeros l)))
-singleBCS (BCS s 0 False)
+  = Just (Just (unsafeSymbol (64 + countTrailingZeros l)))
+singleSS (SS s 0 False)
   | popCount s == 1
-  = Just (Just (unsafeBoxChar (countTrailingZeros s)))
-singleBCS _ = Nothing
+  = Just (Just (unsafeSymbol (countTrailingZeros s)))
+singleSS _ = Nothing
 
-symbols :: Plus (Style LineStyle -> BoxCharSet)
+-- All the allowable symbols, indexed by style and cardinal
+
+symbols :: Plus (Style' -> SymbolSet)
 symbols =
   Plus $ flip $ \case
     Transparent         -> transparent
@@ -184,86 +208,89 @@ symbols =
     Line (Dashed Thick) -> dashedThick
     Line Double         -> double
   where
-    transparent = cardinal u l r d
+    transparent = make u l r d
       where
-        u = unsafeMakeBCS " ╴╸╶╺╷╻─━╼╾┌┍┎┏┐┑┒┓┬┭┮┯┰┱┲┳╌╍═╒╓╔╕╖╗╤╥╦"
-        l = unsafeMakeBCS " ╵╹╶╺╷╻│┃╽╿┌┍┎┏└┕┖┗├┝┞┟┠┡┢┣╎╏║╒╓╔╘╙╚╞╟╠"
-        r = unsafeMakeBCS " ╵╹╴╸╷╻│┃╽╿┐┑┒┓┘┙┚┛┤┥┦┧┨┩┪┫╎╏║╕╖╗╛╜╝╡╢╣"
-        d = unsafeMakeBCS " ╵╹╴╸╶╺─━╼╾└┕┖┗┘┙┚┛┴┵┶┷┸┹┺┻╌╍═╘╙╚╛╜╝╧╨╩"
-    solidThin = cardinal u l r d
+        u = " ╴╸╶╺╷╻─━╼╾┌┍┎┏┐┑┒┓┬┭┮┯┰┱┲┳╌╍═╒╓╔╕╖╗╤╥╦"
+        l = " ╵╹╶╺╷╻│┃╽╿┌┍┎┏└┕┖┗├┝┞┟┠┡┢┣╎╏║╒╓╔╘╙╚╞╟╠"
+        r = " ╵╹╴╸╷╻│┃╽╿┐┑┒┓┘┙┚┛┤┥┦┧┨┩┪┫╎╏║╕╖╗╛╜╝╡╢╣"
+        d = " ╵╹╴╸╶╺─━╼╾└┕┖┗┘┙┚┛┴┵┶┷┸┹┺┻╌╍═╘╙╚╛╜╝╧╨╩"
+    solidThin = make u l r d
       where
-        u = unsafeMakeBCS "╵│╽└┕┘┙├┝┟┢┤┥┧┪┴┵┶┷┼┽┾┿╁╅╆╈╘╛╞╡╧╪"
-        l = unsafeMakeBCS "╴─╼┐┒┘┚┤┦┧┨┬┮┰┲┴┶┸┺┼┾╀╁╂╄╆╊╖╜╢╥╨╫"
-        r = unsafeMakeBCS "╶─╾┌┎└┖├┞┟┠┬┭┰┱┴┵┸┹┼┽╀╁╂╃╅╉╓╙╟╥╨╫"
-        d = unsafeMakeBCS "╷│╿┌┍┐┑├┝┞┡┤┥┦┩┬┭┮┯┼┽┾┿╀╃╄╇╒╕╞╡╤╪"
-    solidThick = cardinal u l r d
+        u = "╵│╽└┕┘┙├┝┟┢┤┥┧┪┴┵┶┷┼┽┾┿╁╅╆╈╘╛╞╡╧╪"
+        l = "╴─╼┐┒┘┚┤┦┧┨┬┮┰┲┴┶┸┺┼┾╀╁╂╄╆╊╖╜╢╥╨╫"
+        r = "╶─╾┌┎└┖├┞┟┠┬┭┰┱┴┵┸┹┼┽╀╁╂╃╅╉╓╙╟╥╨╫"
+        d = "╷│╿┌┍┐┑├┝┞┡┤┥┦┩┬┭┮┯┼┽┾┿╀╃╄╇╒╕╞╡╤╪"
+    solidThick = make u l r d
       where
-        u = unsafeMakeBCS "╹┃╿┖┗┚┛┞┠┡┣┦┨┩┫┸┹┺┻╀╂╃╄╇╉╊╋"
-        l = unsafeMakeBCS "╸━╾┑┓┙┛┥┩┪┫┭┯┱┳┵┷┹┻┽┿╃╅╇╉╈╋"
-        r = unsafeMakeBCS "╺━╼┍┏┕┗┝┡┢┣┮┯┲┳┶┷┺┻┾┿╄╆╇╈╊╋"
-        d = unsafeMakeBCS "╻┃╽┎┏┒┓┟┠┢┣┧┨┪┫┰┱┲┳╁╂╅╆╈╉╊╋"
-    dashedThin = cardinal u l r d
+        u = "╹┃╿┖┗┚┛┞┠┡┣┦┨┩┫┸┹┺┻╀╂╃╄╇╉╊╋"
+        l = "╸━╾┑┓┙┛┥┩┪┫┭┯┱┳┵┷┹┻┽┿╃╅╇╉╈╋"
+        r = "╺━╼┍┏┕┗┝┡┢┣┮┯┲┳┶┷┺┻┾┿╄╆╇╈╊╋"
+        d = "╻┃╽┎┏┒┓┟┠┢┣┧┨┪┫┰┱┲┳╁╂╅╆╈╉╊╋"
+    dashedThin = make u l r d
       where
-        u = unsafeMakeBCS "╎"
-        l = unsafeMakeBCS "╌"
-        r = unsafeMakeBCS "╌"
-        d = unsafeMakeBCS "╎"
-    dashedThick = cardinal u l r d
+        u = "╎"
+        l = "╌"
+        r = "╌"
+        d = "╎"
+    dashedThick = make u l r d
       where
-        u = unsafeMakeBCS "╏"
-        l = unsafeMakeBCS "╍"
-        r = unsafeMakeBCS "╍"
-        d = unsafeMakeBCS "╏"
-    double = cardinal u l r d
+        u = "╏"
+        l = "╍"
+        r = "╍"
+        d = "╏"
+    double = make u l r d
       where
-        u = unsafeMakeBCS "║╙╚╜╝╟╠╢╣╨╩╫╬"
-        l = unsafeMakeBCS "═╕╗╛╝╡╣╤╦╧╩╪╬"
-        r = unsafeMakeBCS "═╒╔╘╚╞╠╤╦╧╩╪╬"
-        d = unsafeMakeBCS "║╓╔╖╗╟╠╢╣╥╦╫╬"
+        u = "║╙╚╜╝╟╠╢╣╨╩╫╬"
+        l = "═╕╗╛╝╡╣╤╦╧╩╪╬"
+        r = "═╒╔╘╚╞╠╤╦╧╩╪╬"
+        d = "║╓╔╖╗╟╠╢╣╥╦╫╬"
+    make u l r d =
+      cardinal
+        (unsafeMakeSS u)
+        (unsafeMakeSS l)
+        (unsafeMakeSS r)
+        (unsafeMakeSS d)
 
-symbolSet :: Cardinal d -> Style LineStyle -> BoxCharSet
-symbolSet = getSegment symbols
+symbolSet :: Cardinal d -> Style' -> SymbolSet
+symbolSet = (@@) symbols
 
-allSymbols :: BoxCharSet
+allSymbols :: SymbolSet
 allSymbols =
-  foldr unionBCS emptyBCS $
-    onCardinals (\d -> foldr unionBCS emptyBCS
+  foldr unionSS emptySS $
+    onCardinals (\d -> foldr unionSS emptySS
                          (map (symbolSet d) universe))
 
-onCardinals :: (forall d. Cardinal d -> a) -> [a]
-onCardinals f = [f U, f L, f R, f D]
-
-symbol :: Plus (Style LineStyle) -> Maybe BoxChar
+symbol :: Plus' -> Maybe Symbol
 symbol plus =
   let intersection =
         fold (symbols <*> plus)
   in fromMaybe
        (error $ "getSymbol: non-unique result (should be impossible): "
                 ++ show intersection)
-       (singleBCS intersection)
+       (singleSS intersection)
 
-approxSymbol :: Plus (Style LineStyle) -> BoxChar
+approxSymbol :: Plus' -> Symbol
 approxSymbol plus =
   fromMaybe
     (error $ "approxSymbol: no result (should be impossible): " ++ show plus)
-    (symbol plus
-     <|> symbol (removeDashed plus)
-     <|> symbol (removeDouble . removeDashed $ plus))
+    (asum [ symbol plus
+          , symbol (removeDashed plus)
+          , symbol (removeDouble . removeDashed $ plus) ])
   where
     removeDashed =
       fmap $ \case
         Line (Dashed t) -> Line (Solid t)
-        s               -> s
+        s -> s
     removeDouble =
       fmap $ \case
-        Line Double -> Line (Solid Thin)
-        s           -> s
+        Line Double -> Line (Solid Thick)
+        s -> s
 
-parseSymbol :: BoxChar -> Plus (Style LineStyle)
+parseSymbol :: Symbol -> Plus'
 parseSymbol c =
   fromMaybe (error "parseSymbol: symbol not found (should be impossible)") $
     for symbols $ \f ->
-      find (memberBCS c . f) universe
+      find (memberSS c . f) universe
 
 -- Instances of things
 
@@ -312,20 +339,20 @@ instance Arbitrary l => Arbitrary (Style l) where
               , (4, Line <$> arbitrary)
               , (1, return White) ]
 
-instance Arbitrary BoxChar where
+instance Arbitrary Symbol where
   arbitrary =
-    elements (listBCS allSymbols)
+    elements (listSS allSymbols)
 
-instance Universe BoxChar where
-  universe = listBCS allSymbols
+instance Universe Symbol where
+  universe = listSS allSymbols
 
-instance Finite BoxChar
+instance Finite Symbol
 
-instance Semigroup BoxChar where
+instance Semigroup Symbol where
   c <> d = approxSymbol (parseSymbol c <> parseSymbol d)
 
-instance Monoid BoxChar where
-  mempty = BoxChar ' '
+instance Monoid Symbol where
+  mempty = Symbol ' '
   mappend = (<>)
 
 instance Universe Thickness where
@@ -344,12 +371,12 @@ instance Universe l => Universe (Style l) where
 instance Finite l => Finite (Style l)
 
 instance Universe a => Universe (Plus a) where
-  universe = do
-    !(u :: a) <- universe
-    !(l :: a) <- universe
-    !(r :: a) <- universe
-    !(d :: a) <- universe
-    return $ makePlus u l r d
+  universe =
+    makePlus
+      <$> universe
+      <*> universe
+      <*> universe
+      <*> universe
 
 instance Finite a => Finite (Plus a)
 
@@ -379,7 +406,7 @@ instance Monoid a => Monoid (Plus a) where
 
 instance Foldable Plus where
   foldMap f p =
-    mconcat (onCardinals (getSegment (fmap f p)))
+    mconcat (onCardinals (fmap f p @@))
 
 instance Traversable Plus where
   sequenceA (Plus f) =
