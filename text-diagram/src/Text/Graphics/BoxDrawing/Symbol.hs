@@ -1,11 +1,10 @@
 module Text.Graphics.BoxDrawing.Symbol
-  ( Thickness(..)
-  , LineStyle(..)
-  , Style(..), Style'
-  , Axis(..)
-  , Cardinal(..), cardinal, onCardinals
-  , Plus(..), Plus', (@@), makePlus
-  , Symbol, getSymbol, makeSymbol, exactSymbol, approxSymbol, parseSymbol
+  ( Symbol
+  , getSymbol
+  , makeSymbol
+  , exactSymbol
+  , approxSymbol
+  , parseSymbol
   ) where
 
 import Data.Semigroup
