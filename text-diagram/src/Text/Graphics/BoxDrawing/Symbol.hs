@@ -5,6 +5,11 @@ module Text.Graphics.BoxDrawing.Symbol
   , exactSymbol
   , approxSymbol
   , parseSymbol
+  , segment
+  , across
+  , corner
+  , tee
+  , plus
   ) where
 
 import Data.Semigroup
@@ -208,22 +213,51 @@ allSymbols =
     onCardinals (\d -> foldr unionSS emptySS
                          (map (symbolSet d) universe))
 
+segment :: Monoid a => Cardinal d -> a -> Plus a
+segment dir a =
+  case dir of
+    U -> makePlus a mempty mempty mempty
+    L -> makePlus mempty a mempty mempty
+    R -> makePlus mempty mempty a mempty
+    D -> makePlus mempty mempty mempty a
+
+across :: Monoid a => Axis -> a -> Plus a
+across Vertical   a = makePlus a mempty mempty a
+across Horizontal a = makePlus mempty a a mempty
+
+corner :: Monoid a => Cardinal Vertical -> Cardinal Horizontal -> a -> Plus a
+corner v h a =
+  segment v a
+  `mappend`
+  segment h a
+
+tee :: Monoid a => Cardinal d -> a -> Plus a
+tee dir a =
+  segment (clockwise dir) a
+  `mappend`
+  segment dir a
+  `mappend`
+  segment (anticlockwise dir) a
+
+plus :: a -> Plus a
+plus a = makePlus a a a a
+
 exactSymbol :: Plus' -> Maybe Symbol
-exactSymbol plus =
+exactSymbol p =
   let intersection =
-        fold (symbols <*> plus)
+        fold (symbols <*> p)
   in fromMaybe
        (error $ "getSymbol: non-unique result (should be impossible): "
                 ++ show intersection)
        (singleSS intersection)
 
 approxSymbol :: Plus' -> Symbol
-approxSymbol plus =
+approxSymbol p =
   fromMaybe
-    (error $ "approxSymbol: no result (should be impossible): " ++ show plus)
-    (asum [ exactSymbol plus
-          , exactSymbol (removeDashed plus)
-          , exactSymbol (removeDouble . removeDashed $ plus) ])
+    (error $ "approxSymbol: no result (should be impossible): " ++ show p)
+    (asum [ exactSymbol p
+          , exactSymbol (removeDashed p)
+          , exactSymbol (removeDouble . removeDashed $ p) ])
   where
     removeDashed =
       fmap $ \case

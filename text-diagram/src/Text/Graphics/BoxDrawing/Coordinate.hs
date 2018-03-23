@@ -1,32 +1,39 @@
 module Text.Graphics.BoxDrawing.Coordinate
   ( X
   , Y
-  , Coordinate
-  , c
-  , locate
+  , Point
+  , Move(..)
   ) where
+
+import Data.Ix
+
+import Text.Graphics.BoxDrawing.Cardinal
+
+type Point = (X, Y)
 
 newtype X
   = X Integer
-  deriving (Eq, Ord, Num)
+  deriving (Eq, Ord, Num, Enum, Integral, Real, Ix)
   deriving newtype (Show)
 
 newtype Y
   = Y Integer
-  deriving (Eq, Ord, Num)
+  deriving (Eq, Ord, Num, Enum, Integral, Real, Ix)
   deriving newtype (Show)
 
-data Coordinate
-  = Coordinate ((?width::X) => X) ((?height::Y) => Y)
+class Move p d where
+  move :: Integer -> Cardinal d -> p -> p
 
-c :: ((?width::X) => X) -> ((?height::Y) => Y) -> Coordinate
-c = Coordinate
+instance Move X Horizontal where
+  move n L (X x) = (X (x - n))
+  move n R (X x) = (X (x + n))
 
-locate :: X -> Y -> Coordinate -> Maybe (X, Y)
-locate width height (Coordinate x y) =
-  let ?width  = width
-      ?height = height
-  in if 0 <= x && x <= ?width
-     && 0 <= y && y <= ?height
-     then Just (x, y)
-     else Nothing
+instance Move Y Vertical where
+  move n U (Y y) = Y (y - n)
+  move n D (Y y) = Y (y + n)
+
+instance Move (X, Y) Horizontal where
+  move n d (x, y) = (move n d x, y)
+
+instance Move (X, Y) Vertical where
+  move n d (x, y) = (x, move n d y)

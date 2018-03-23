@@ -27,6 +27,14 @@ makePlus :: a -> a -> a -> a -> Plus a
 makePlus !u !l !r !d =
   Plus $ cardinal u l r d
 
+instance Eq a => Eq (Plus a) where
+  Plus p == Plus q =
+    onCardinals p == onCardinals q
+
+instance Ord a => Ord (Plus a) where
+  Plus p `compare` Plus q =
+    onCardinals p `compare` onCardinals q
+
 instance Universe a => Universe (Plus a) where
   universe =
     makePlus
