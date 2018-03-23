@@ -3,6 +3,7 @@ module Text.Graphics.BoxDrawing.Coordinate
   , Y
   , Point
   , Move(..)
+  , Distance(..)
   ) where
 
 import Data.Ix
@@ -37,3 +38,12 @@ instance Move (X, Y) Horizontal where
 
 instance Move (X, Y) Vertical where
   move n d (x, y) = (x, move n d y)
+
+class Distance p where
+  distance :: Num n => p -> p -> n
+
+instance Distance X where
+  (X a) `distance` (X b) = fromInteger (b - a)
+
+instance Distance Y where
+  (Y a) `distance` (Y b) = fromInteger (b - a)

@@ -213,31 +213,30 @@ allSymbols =
     onCardinals (\d -> foldr unionSS emptySS
                          (map (symbolSet d) universe))
 
-segment :: Monoid a => Cardinal d -> a -> Plus a
-segment dir a =
-  case dir of
-    U -> makePlus a mempty mempty mempty
-    L -> makePlus mempty a mempty mempty
-    R -> makePlus mempty mempty a mempty
-    D -> makePlus mempty mempty mempty a
+segment :: Monoid a => a -> Cardinal d -> Plus a
+segment a = \case
+  U -> makePlus a mempty mempty mempty
+  L -> makePlus mempty a mempty mempty
+  R -> makePlus mempty mempty a mempty
+  D -> makePlus mempty mempty mempty a
 
-across :: Monoid a => Axis -> a -> Plus a
-across Vertical   a = makePlus a mempty mempty a
-across Horizontal a = makePlus mempty a a mempty
+across :: Monoid a => a -> Axis -> Plus a
+across a Vertical   = makePlus a mempty mempty a
+across a Horizontal = makePlus mempty a a mempty
 
-corner :: Monoid a => Cardinal Vertical -> Cardinal Horizontal -> a -> Plus a
-corner v h a =
-  segment v a
+corner :: Monoid a => a -> Cardinal Vertical -> Cardinal Horizontal -> Plus a
+corner a v h =
+  segment a v
   `mappend`
-  segment h a
+  segment a h
 
-tee :: Monoid a => Cardinal d -> a -> Plus a
-tee dir a =
-  segment (clockwise dir) a
+tee :: Monoid a => a -> Cardinal d -> Plus a
+tee a dir =
+  segment a (clockwise dir)
   `mappend`
-  segment dir a
+  segment a dir
   `mappend`
-  segment (anticlockwise dir) a
+  segment a (anticlockwise dir)
 
 plus :: a -> Plus a
 plus a = makePlus a a a a
