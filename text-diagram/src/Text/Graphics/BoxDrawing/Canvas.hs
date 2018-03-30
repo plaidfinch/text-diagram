@@ -40,8 +40,18 @@ instance Monoid Character where
 
 type Pen m a = Point -> a -> m ()
 
-type Drawing a =
-  forall m. Monad m => ReaderT (Pen m a) m ()
+newtype Drawing a =
+  Draw (forall m. Monad m => ReaderT (Pen m a) m ())
+
+draw :: Monad m => Drawing a -> ReaderT (Pen m a) m ()
+draw (Draw drawing) = drawing
+
+instance Semigroup (Drawing a) where
+  Draw d <> Draw e = Draw (d >> e)
+
+instance Monoid (Drawing a) where
+  mempty = Draw (return ())
+  mappend = (<>)
 
 type Drawing' = Drawing Character
 
@@ -54,19 +64,19 @@ stroke
   :: Move (X, Y) d
   => Style' -> Point -> Maybe (Cardinal d) -> Cardinal d -> Rational -> Drawing'
 stroke style (x, y) startDir dir dist
-  | dist == 0 = return ()
+  | dist == 0 = mempty
   | dist <  0 =
       stroke style (x, y) startDir (opposite dir) (negate dist)
   | otherwise =
       case startDir of
         Nothing ->
-          pen (x, y) (S (segment style dir)) >> next (1/2)
+          Draw (pen (x, y) (S (segment style dir))) <> next (1/2)
         Just start
           | start == dir -> next 1
           | dist >= 1 ->
-              pen (x, y) (S (across style (axis dir))) >> next 1
+              Draw (pen (x, y) (S (across style (axis dir)))) <> next 1
           | otherwise ->
-              pen (x, y) (S (segment style (opposite dir)))
+              Draw (pen (x, y) (S (segment style (opposite dir))))
       where
         next n =
           stroke style
@@ -76,21 +86,28 @@ stroke style (x, y) startDir dir dist
             (dist - n)
 
 box :: Style' -> Point -> Point -> Drawing'
-box style (l, t) (r, b) = do
-  stroke style (l, t) Nothing R (l `distance` r)
-  stroke style (l, t) Nothing D (t `distance` b)
-  stroke style (r, b) Nothing L (l `distance` r)
-  stroke style (r, b) Nothing U (t `distance` b)
+box style (l, t) (r, b) =
+  mconcat
+    [ stroke style (l, t) Nothing R (l `distance` r)
+    , stroke style (l, t) Nothing D (t `distance` b)
+    , stroke style (r, b) Nothing L (l `distance` r)
+    , stroke style (r, b) Nothing U (t `distance` b)
+    ]
 
 fill :: Style' -> Point -> Point -> Drawing'
-fill style (l, t) (r, b) = do
-  forM_ (range (t+1, b-1)) $ \row ->
-    stroke style (l, row) Nothing R (l `distance` r)
-  forM_ (range (l+1, r-1)) $ \col ->
-    stroke style (col, t) Nothing D (t `distance` b)
+fill style (l, t) (r, b) =
+  mconcat
+    [ stroke style (l, row) Nothing R (l `distance` r)
+    | row <- range (t+1, b-1)
+    ]
+  <>
+  mconcat
+    [ stroke style (col, t) Nothing D (t `distance` b)
+    | col <- range (l+1, r-1)
+    ]
 
 text :: Point -> Bool -> String -> Drawing'
-text (x, y) opaque str =
+text (x, y) opaque str = Draw $
   forM_ (zip [0..] (lines str)) $
     \((y +) -> row, line) ->
       forM_ (zip [0..] line) $
@@ -116,7 +133,7 @@ drawOn
   => Canvas array a -> Drawing a -> m ()
 drawOn c@(Canvas canvas) drawing = do
   (width, height) <- canvasSize c
-  runReaderT drawing (write width height)
+  runReaderT (draw drawing) (write width height)
   where
     write width height (x, y) a
       |  0 < x && x <= width && 0 < y && y <= height

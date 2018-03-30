@@ -19,6 +19,9 @@ data Cardinal (a :: Axis) where
   R :: Cardinal Horizontal
   D :: Cardinal Vertical
 
+data Direction where
+  Dir :: !(Cardinal d) -> Direction
+
 deriving instance Show (Cardinal d)
 deriving instance Ord  (Cardinal d)
 deriving instance Eq   (Cardinal d)
