@@ -51,13 +51,6 @@ unsafeSymbol i
   | i >= 0 && i < 128 = Symbol (toEnum (i + 0x2500))
   | otherwise = error "unsafeSymbol: out of range"
 
-instance Semigroup Symbol where
-  c <> d = approxSymbol (parseSymbol c <> parseSymbol d)
-
-instance Monoid Symbol where
-  mempty = Symbol ' '
-  mappend = (<>)
-
 instance Universe Symbol where
   universe = listSS allSymbols
 
