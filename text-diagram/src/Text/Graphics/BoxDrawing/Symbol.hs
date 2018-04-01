@@ -165,29 +165,29 @@ symbols =
     Line (Dashed Thick) -> dashedThick
     Line Double         -> double
   where
-    transparent =
+    !transparent =
       make " ╴╸╶╺╷╻─━╼╾┌┍┎┏┐┑┒┓┬┭┮┯┰┱┲┳╌╍═╒╓╔╕╖╗╤╥╦"
            " ╵╹╶╺╷╻│┃╽╿┌┍┎┏└┕┖┗├┝┞┟┠┡┢┣╎╏║╒╓╔╘╙╚╞╟╠"
            " ╵╹╴╸╷╻│┃╽╿┐┑┒┓┘┙┚┛┤┥┦┧┨┩┪┫╎╏║╕╖╗╛╜╝╡╢╣"
            " ╵╹╴╸╶╺─━╼╾└┕┖┗┘┙┚┛┴┵┶┷┸┹┺┻╌╍═╘╙╚╛╜╝╧╨╩"
-    solidThin =
+    !solidThin =
       make "╵│╽└┕┘┙├┝┟┢┤┥┧┪┴┵┶┷┼┽┾┿╁╅╆╈╘╛╞╡╧╪"
            "╴─╼┐┒┘┚┤┦┧┨┬┮┰┲┴┶┸┺┼┾╀╁╂╄╆╊╖╜╢╥╨╫"
            "╶─╾┌┎└┖├┞┟┠┬┭┰┱┴┵┸┹┼┽╀╁╂╃╅╉╓╙╟╥╨╫"
            "╷│╿┌┍┐┑├┝┞┡┤┥┦┩┬┭┮┯┼┽┾┿╀╃╄╇╒╕╞╡╤╪"
-    solidThick =
+    !solidThick =
       make "╹┃╿┖┗┚┛┞┠┡┣┦┨┩┫┸┹┺┻╀╂╃╄╇╉╊╋"
            "╸━╾┑┓┙┛┥┩┪┫┭┯┱┳┵┷┹┻┽┿╃╅╇╉╈╋"
            "╺━╼┍┏┕┗┝┡┢┣┮┯┲┳┶┷┺┻┾┿╄╆╇╈╊╋"
            "╻┃╽┎┏┒┓┟┠┢┣┧┨┪┫┰┱┲┳╁╂╅╆╈╉╊╋"
-    double =
+    !double =
       make "║╙╚╜╝╟╠╢╣╨╩╫╬"
            "═╕╗╛╝╡╣╤╦╧╩╪╬"
            "═╒╔╘╚╞╠╤╦╧╩╪╬"
            "║╓╔╖╗╟╠╢╣╥╦╫╬"
-    dashedThin =
+    !dashedThin =
       make "╎" "╌" "╌" "╎"
-    dashedThick =
+    !dashedThick =
       make "╏" "╍" "╍" "╏"
 
     make u l r d =
@@ -206,40 +206,12 @@ allSymbols =
     onCardinals (\d -> foldr unionSS emptySS
                          (map (symbolSet d) universe))
 
-segment :: Monoid a => a -> Cardinal d -> Plus a
-segment a = \case
-  U -> makePlus a mempty mempty mempty
-  L -> makePlus mempty a mempty mempty
-  R -> makePlus mempty mempty a mempty
-  D -> makePlus mempty mempty mempty a
-
-across :: Monoid a => a -> Axis -> Plus a
-across a Vertical   = makePlus a mempty mempty a
-across a Horizontal = makePlus mempty a a mempty
-
-corner :: Monoid a => a -> Cardinal Vertical -> Cardinal Horizontal -> Plus a
-corner a v h =
-  segment a v
-  `mappend`
-  segment a h
-
-tee :: Monoid a => a -> Cardinal d -> Plus a
-tee a dir =
-  segment a (clockwise dir)
-  `mappend`
-  segment a dir
-  `mappend`
-  segment a (anticlockwise dir)
-
-plus :: a -> Plus a
-plus a = makePlus a a a a
-
 exactSymbol :: Plus' -> Maybe Symbol
 exactSymbol p =
   let intersection =
         fold (symbols <*> p)
   in fromMaybe
-       (error $ "getSymbol: non-unique result (should be impossible): "
+       (error $ "exactSymbol: non-unique result (should be impossible): "
                 ++ show intersection)
        (singleSS intersection)
 

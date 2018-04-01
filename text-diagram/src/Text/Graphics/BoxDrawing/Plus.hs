@@ -27,6 +27,38 @@ makePlus :: a -> a -> a -> a -> Plus a
 makePlus !u !l !r !d =
   Plus $ cardinal u l r d
 
+-- Easy ways of constructing Plus values:
+
+segment :: Monoid a => a -> Cardinal d -> Plus a
+segment a = \case
+  U -> makePlus a mempty mempty mempty
+  L -> makePlus mempty a mempty mempty
+  R -> makePlus mempty mempty a mempty
+  D -> makePlus mempty mempty mempty a
+
+across :: Monoid a => a -> Axis -> Plus a
+across a Vertical   = makePlus a mempty mempty a
+across a Horizontal = makePlus mempty a a mempty
+
+corner :: Monoid a => a -> Cardinal Vertical -> Cardinal Horizontal -> Plus a
+corner a v h =
+  segment a v
+  `mappend`
+  segment a h
+
+tee :: Monoid a => a -> Cardinal d -> Plus a
+tee a dir =
+  segment a (clockwise dir)
+  `mappend`
+  segment a dir
+  `mappend`
+  segment a (anticlockwise dir)
+
+plus :: a -> Plus a
+plus a = makePlus a a a a
+
+-- Instances
+
 instance Eq a => Eq (Plus a) where
   Plus p == Plus q =
     onCardinals p == onCardinals q
