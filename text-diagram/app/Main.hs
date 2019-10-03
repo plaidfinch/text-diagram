@@ -3,11 +3,15 @@ module Main where
 
 import Data.Ix
 import Data.Traversable
+import Data.Foldable
+import Data.Maybe
 import Control.Monad
 import Control.Monad.Reader
 import Data.Array.IO
 import Data.IORef
 import Data.Coerce
+import Data.List.NonEmpty (NonEmpty(..), nonEmpty)
+import qualified Data.List.NonEmpty as NE
 
 import Text.Graphics.BoxDrawing
 
@@ -19,18 +23,21 @@ main =
     unsafePlay A (5,7)
     unsafePlay B (6,6)
     rotate clockwise
-    drawing <- fmap mconcat (sequence drawingCommands)
-    liftIO $ sketchOut character (35,15) drawing
-    liftIO $ sketchOut character (35,15) drawing
+    liftIO . print =<< available
+    drawing <- drawPick A (3,5)
     liftIO $ sketchOut character (35,15) drawing
   where
     origin = (1,1)
 
-    drawingCommands =
-      [ drawBorders origin
-      , return (placing origin A (2,5))
-      , drawPieces origin
-      ]
+    drawPick player position =
+      mconcatA
+        [ drawBorders origin
+        , return (placing origin player position)
+        , drawPieces origin
+        ]
+
+mconcatA :: (Applicative f, Monoid m, Foldable t) => t (f m) -> f m
+mconcatA = fmap mconcat . sequenceA . toList
 
 -- Players
 
@@ -128,10 +135,14 @@ logicalBounds =
       R -> (fromIntegral y, fromIntegral x)
       D -> (x, y)
 
-allPositions :: Game [(CoordX, [CoordY])]
+allPositions :: Game (NonEmpty (CoordX, NonEmpty CoordY))
 allPositions = do
   (x_max, y_max) <- logicalBounds
-  return $ map (\x -> (x, range (1, y_max))) (range (1, x_max))
+  when (y_max < 1) $ error "allPositions: game board has no rows"
+  when (x_max < 1) $ error "allPositions: game board has no columns"
+  return . NE.fromList $
+    map (\x -> (x, NE.fromList $ range (1, y_max)))
+        (range (1, x_max))
 
 inBoard :: Position -> Game Bool
 inBoard p = do
@@ -147,7 +158,7 @@ under (x, y) =
 playable :: Position -> Game Bool
 playable here =
   getPosition here >>= \case
-    Just _ -> return False
+    Just _  -> return False
     Nothing -> under here >>= \case
       Nothing -> return True
       Just below ->
@@ -165,17 +176,85 @@ unsafePlay piece p =
   game $ \b@(Board _ locations) ->
     flip (writeArray locations) (Just piece) =<< physicalPosition b p
 
-available :: Game [(CoordX, [CoordY])]
+available :: Game [(CoordX, NonEmpty CoordY)]
 available = do
   positions <- allPositions
-  forM positions $ \(x, ys) ->
-    (x,) <$> filterM (playable . (x,)) ys
+  fmap filterEmptyCols $
+    forM positions $ \(x, ys) ->
+      (x,) <$> filterM (playable . (x,)) (toList ys)
+  where
+    filterEmptyCols
+      :: NonEmpty (CoordX, [CoordY]) -> [(CoordX, NonEmpty CoordY)]
+    filterEmptyCols =
+      mapMaybe (\(x, col) -> (x,) <$> nonEmpty col). toList
+
 
 forPositions :: (Position -> Game r) -> Game [r]
 forPositions f = do
   positions <- allPositions
   fmap concat . forM positions $ \(x, ys) ->
-    forM ys $ \y -> f (x, y)
+    fmap toList . forM ys $ \y -> f (x, y)
+
+-- Picking a position
+
+-- TODO: make non-selected columns also zippers
+
+data Picking
+  = PickCol
+      [(CoordX, NonEmpty CoordY)]
+       (CoordX, PickRow)
+      [(CoordX, NonEmpty CoordY)]
+    deriving (Eq, Ord, Show)
+
+data PickRow
+  = PickRow
+      [CoordY]
+       CoordY
+      [CoordY]
+    deriving (Eq, Ord, Show)
+
+pickRow :: NonEmpty CoordY -> PickRow
+pickRow (NE.reverse -> c :| cs)  =
+  PickRow cs c []
+
+unPickRow :: PickRow -> NonEmpty CoordY
+unPickRow (PickRow ds y us)
+  | [      ] <- ds =
+      NE.reverse $ y  :| us
+  | d' : ds' <- ds =
+      NE.reverse $ d' :| (ds' ++ [y] ++ us)
+
+pick :: NonEmpty (CoordX, NonEmpty CoordY) -> Picking
+pick ((x, col) :| rs) =
+  PickCol [] (x, pickRow col) rs
+
+movePickRow :: Cardinal Vertical -> PickRow -> PickRow
+movePickRow dir rowPicking@(PickRow ds y us)
+  | U <- dir, [] <- us = rowPicking
+  | D <- dir, [] <- ds = rowPicking
+  | U <- dir, y' : us' <- us =
+      PickRow (y : ds) y' us'
+  | D <- dir, y' : ds' <- ds =
+      PickRow ds' y' (y : us)
+
+movePick :: Cardinal d -> Picking -> Picking
+movePick dir picking@(PickCol ls (x, col) rs)
+  | U <- dir = PickCol ls (x, movePickRow dir col) rs
+  | D <- dir = PickCol ls (x, movePickRow dir col) rs
+  | L <- dir, [] <- ls = picking
+  | R <- dir, [] <- rs = picking
+  | L <- dir, (x', col') : ls' <- ls =
+      PickCol ls' (x', pickRow col') ((x, unPickRow col) : rs)
+  | R <- dir, (x', col') : rs' <- rs =
+      PickCol ((x, unPickRow col) : ls) (x', pickRow col') rs'
+
+getPick :: Picking -> Position
+getPick (PickCol _ (x, PickRow _ y _) _) = (x, y)
+
+-- TODO: Use module abstraction to make it impossible to play somewhere that is
+-- not available. Don't export Picking constructors, just movePick and getPick.
+-- Then, moveWith :: (Picking -> Game Picking) -> Game () makes a move (if there
+-- is an available move -- if not, doesn't do anything).
 
 -- Translating board coordinates to print them
 
